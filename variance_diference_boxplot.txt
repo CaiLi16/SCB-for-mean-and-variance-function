@@ -1,0 +1,187 @@
+########################the following code is to plot boxplot of sqrt(n)*abs(hat(sigma^{2})-tilde(sigma^{2}))
+#################choose spline knots#####################
+BIC_f<-function(data)
+{
+  x=data[,1]
+  n=length(x)
+  Na=floor(1*(n^(1/9)))
+  Nb=min(floor(5*n^(1/9)),floor(n/4-1))
+  N=Na
+  Nopt=Na
+  BIClist = 0
+  Nlist = 0
+  while (N<=Nb){
+    y  =data[,2]
+    B  =bs(x, df = NULL, knots =c(1:N)/(N+1), degree = 2, intercept = TRUE, Boundary.knots =c(0,1))
+    temp1=solve(t(B)%*%B)
+    temp2=t(B)%*%y
+    beta=temp1%*%temp2
+    yhat=B%*%beta
+    temp3=yhat-y
+    MSE =sum(temp3*temp3)/n
+    qn =N+2
+    BIC=log(MSE)+qn*log(n)/n
+    BIClist = cbind(BIClist,BIC)
+    Nlist = cbind(Nlist,N)
+    N=N+1
+  }
+  result = rbind(Nlist,BIClist)
+  return (result)
+}
+#######generate data##################################
+data_f<-function(n)
+{
+  x   <-seq(1/n,1,by=1/n)
+  # m =as.matrix(cos(3*pi*x))
+  m   =as.matrix(exp(-32*x^2))
+  temp1<-as.matrix(exp(x)-0.9)
+  temp2<-as.matrix(exp(x)+0.9)
+ # sig =as.matrix(temp1/temp2)
+  norm <-as.matrix(rnorm(n))
+  sig  =0.1*sin(2*pi*x)+0.2
+ # t   <-sqrt(0.8)*rt(n,df=10)
+ # eps =sig*t
+   eps =sig*norm
+  y    =m+eps
+  data =cbind(x,y)
+  return(data)
+}
+##################design matrix###############
+X_f<-function(n)
+{
+  X<-matrix(1,nrow=n,ncol=5)
+  for(j in 1:5)
+  {
+    X[,j]=(c(1:n)/n)^(j-1)
+  }
+  return(X)
+}
+##########bandwidth##################################
+h_f<-function(data)
+{
+  x<-data[,1]
+  n<-length(x)
+  y<-data[,2]
+  X<-X_f(n=n)
+  temp1<-t(X)%*%X
+  temp2<-t(X)%*%y
+  X_inv<-solve(temp1)
+  a_hat<-X_inv%*%temp2
+  e<-y-X%*%a_hat
+  e_2<-sum(e*e)
+  temp3<-c(2*a_hat[3],6*a_hat[4],12*a_hat[5],0,0)
+  temp4<-X%*%temp3
+  temp5<-sum(temp4*temp4)
+  h_rot<-35*e_2/temp5
+  h_rot<-(h_rot/n)^0.2
+  return(h_rot)
+}
+###############kernel function##################
+k_f<-function(u)
+{
+  k<-15*(1-u^2)^2/16*((-1<=u)*(u<=1))
+  return(k)
+}
+############Nadaraya Waston estimates####################
+m_hat_f<-function(data,xgrid,h)
+{
+  x<-data[,1]
+  y<-data[,2]
+  n<-length(x)
+  m<-length(xgrid)
+  c<-rep(1,m)
+  c1<-x%*%t(c)
+  c0<-rep(1,n)
+  c2<-c0%*%t(xgrid)
+  M_x<-c1-c2
+  M_h<-M_x/h
+  kgrid<-k_f(u=M_h)/h
+  temp<-t(kgrid)%*%(c0)
+  temp2<-t(kgrid)%*%y
+  m_hat<-temp2/temp
+  m_hat<-cbind(xgrid,m_hat)
+  return(m_hat)
+}
+##################SCB coverage for variance function##############################
+box_f<-function(n,NSIM,h_c)
+{ 
+ dlist=0
+    N =1
+    while ( N<=NSIM)
+    {  
+    data  <-data_f(n=n)
+    x     <-data[,1]
+    y     <-data[,2]
+    n       =length(x)
+    result=BIC_f(data=data)
+    result= result[,(2:dim(result)[2])]
+    knot  =result[1,which.min(result[2,])]
+    B     =bs(x, knots =c(1:knot)/(knot+1), degree = 1, intercept = TRUE, Boundary.knots = c(0,1))
+    temp1<-solve(t(B)%*%B)
+    temp2<-t(B)%*%y
+     beta<-temp1%*%temp2
+     yhat<-B%*%beta
+     temp3=y-yhat
+      z  <-temp3^2
+    data1<-cbind(x,z)
+  h_rot  <-h_f(data=data1)
+    h_sig<-h_rot/h_c
+    a     <-sqrt(h_sig)*n^{-0.1}
+      temp<-(1-2*h_sig)/400
+     xgrid<-as.matrix(h_sig+c(1:400)*temp)
+ sigma_sk_hat<-m_hat_f(data=data1,xgrid=xgrid,h=h_sig)
+   sigma_sk_hat<-as.matrix(sigma_sk_hat[,2])
+##########################sigma tilde###################
+    temp4<-as.matrix(exp(x)-0.9)
+    temp5<-as.matrix(exp(x)+0.9)
+   #sig  =as.matrix(temp4/temp5)
+    sig =0.1*sin(2*pi*x)+0.2
+    norm <-as.matrix(rnorm(n))
+    #eps  =sig*norm
+     t     <-sqrt(0.8)*rt(n,df=10)
+    eps   =sig*t
+    z1   <-eps^2
+    data2<-cbind(x,z1)
+    h_rot_tilde<-h_f(data=data2)
+    h_sig_tilde<-h_rot_tilde/h_c
+
+   sigma_k_tilde<-m_hat_f(data=data2,xgrid=xgrid,h=h_sig)
+ sigma_k_tilde<-as.matrix(sigma_k_tilde[,2])
+   temp6      <-sqrt(n)*a*abs(sigma_k_tilde-sigma_sk_hat)
+   d          <-max(temp6)
+   dlist      <-c(dlist,d)
+    N         <-N+1
+    }
+  return(dlist)
+   }   
+########################################
+# Start the clock!
+ptm <- proc.time()
+library(splines)
+require(stats)
+require(graphics)
+set.seed(10)
+
+ 
+NSIM=2000
+
+n=300
+h_c=(log(n))^0.5    
+dlist0<-box_f(n=n,NSIM=NSIM,h_c=h_c)
+dlist0<-dlist0[2:2001]
+
+n=600
+h_c=(log(n))^0.5    
+dlist1<-box_f(n=n,NSIM=NSIM,h_c=h_c)
+dlist1<-dlist1[2:2001]
+
+n=900
+h_c=(log(n))^0.5    
+dlist2<-box_f(n=n,NSIM=NSIM,h_c=h_c)
+dlist2<-dlist2[2:2001]
+
+boxplot(dlist0,dlist1,dlist2,col=c(2,3,4),ylim=c(0,1.5),names=c('n=300','n=600','n=900'))
+
+
+# Stop the clock
+proc.time() - ptm

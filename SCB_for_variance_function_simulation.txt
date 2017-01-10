@@ -1,0 +1,183 @@
+#################The following code is to construct SCB for variance function for simulation data#######################
+#################choose spline knots#####################
+BIC_f<-function(data)
+{
+x=data[,1]
+n=length(x)
+Na=floor(1*(n^(1/9)))
+Nb=min(floor(5*n^(1/9)),floor(n/4-1))
+N=Na
+Nopt=Na
+BIClist = 0
+Nlist = 0
+while (N<=Nb){
+   y  =data[,2]
+   B  =bs(x, df = NULL, knots =c(1:N)/(N+1), degree = 3, intercept = TRUE,  Boundary.knots =c(0,1))
+ temp1=solve(t(B)%*%B)
+ temp2=t(B)%*%y
+  beta=temp1%*%temp2
+  yhat=B%*%beta
+ temp3=yhat-y
+  MSE =sum(temp3*temp3)/n
+  qn =N+2
+  BIC=log(MSE)+qn*log(n)/n
+  BIClist = cbind(BIClist,BIC)
+  Nlist = cbind(Nlist,N)
+  N=N+1
+  }
+result = rbind(Nlist,BIClist)
+return (result)
+  }
+#######generate data##################################
+data_f<-function(n)
+{
+x<-seq(1/n,1,by=1/n)
+m=as.matrix(cos(3*pi*x))
+#m=as.matrix(exp(-3*x^2))
+temp1<-as.matrix(exp(x)-0.9)
+temp2<-as.matrix(exp(x)+0.9)
+#sig=as.matrix(temp1/temp2)
+sig<-0.1*sin(2*pi*x)+0.2
+#sig<-(1+x)^2
+norm<-as.matrix(rnorm(n))
+eps=sig*norm
+t<-sqrt(0.8)*rt(n,df=10)
+eps <-t*sig
+y=m+eps
+data=cbind(x,y)
+return(data)
+}
+##################design matrix###############
+X_f<-function(n)
+{
+X<-matrix(1,nrow=n,ncol=5)
+ for(j in 1:5)
+ {
+   X[,j]=(c(1:n)/n)^(j-1)
+  }
+return(X)
+}
+##########bandwidth##################################
+h_f<-function(data)
+{
+    x<-data[,1]
+    n<-length(x)
+    y<-data[,2]
+    X<-X_f(n=n)
+temp1<-t(X)%*%X
+temp2<-t(X)%*%y
+X_inv<-solve(temp1)
+a_hat<-X_inv%*%temp2
+    e<-y-X%*%a_hat
+  e_2<-sum(e*e)
+temp3<-c(2*a_hat[3],6*a_hat[4],12*a_hat[5],0,0)
+temp4<-X%*%temp3
+temp5<-sum(temp4*temp4)
+h_rot<-35*e_2/temp5
+h_rot<-(h_rot/n)^0.2
+return(h_rot)
+}
+###############kernel function##################
+k_f<-function(u)
+{
+k<-15*(1-u^2)^2/16*((-1<=u)*(u<=1))
+return(k)
+}
+############Nadaraya Waston estimates####################
+m_hat_f<-function(data,xgrid,h)
+{
+x<-data[,1]
+y<-data[,2]
+n<-length(x)
+m<-length(xgrid)
+c<-rep(1,m)
+c1<-x%*%t(c)
+c0<-rep(1,n)
+c2<-c0%*%t(xgrid)
+M_x<-c1-c2
+M_h<-M_x/h
+kgrid<-k_f(u=M_h)/h
+temp<-t(kgrid)%*%(c0)
+temp2<-t(kgrid)%*%y
+m_hat<-temp2/temp
+m_hat<-cbind(xgrid,m_hat)
+return(m_hat)
+}
+##################SCB for variance  function##############################
+     library(splines)
+     require(stats)
+     require(graphics)
+      set.seed(10)
+      n        =600
+      alpha    =0.01
+      h_c      =(log(n))^0.5
+      h_delta_c=(log(n))^0.25
+       data    <-data_f(n=n)
+         x     <-data[,1]
+        y      <-data[,2]
+       n       =length(x)
+      result   =BIC_f(data=data)
+      result   = result[,(2:dim(result)[2])]
+      knot     =result[1,which.min(result[2,])]
+      B        =bs(x, knots =c(1:knot)/(knot+1), degree = 3, intercept = TRUE,  Boundary.knots = c(0,1))
+      temp1    <-solve(t(B)%*%B)
+      temp2    <-t(B)%*%y
+      beta     <-temp1%*%temp2
+      yhat     <-B%*%beta
+      temp3    =y-yhat
+      z        <-temp3^2
+      data1    <-cbind(x,z)
+      h_rot    <-h_f(data=data1)
+      h_sig    <-h_rot/h_c
+      temp     <-(1-2*h_sig)/400
+      xgrid    <-as.matrix(h_sig+c(1:400)*temp)
+ sigma_sk_hat  <-m_hat_f(data=data1,xgrid=xgrid,h=h_sig)
+   sigma_sk_xgrid_hat<-as.matrix(sigma_sk_hat[,2])
+  sigma_sk_hat<-m_hat_f(data=data1,xgrid=xgrid,h=h_sig)
+##########################sigma0 estimate spline +kernel###################
+    result =BIC_f(data=data1)
+    result = result[,(2:dim(result)[2])]
+    knot   =result[1,which.min(result[2,])]
+    B      =bs(x, knots =c(1:knot)/(knot+1), degree = 3, intercept = TRUE,  Boundary.knots = c(0,1))
+    temp3  <-solve(t(B)%*%B)
+    temp4  <-t(B)%*%z
+     beta  <-temp3%*%temp4
+sigma_s_hat <-B%*%beta
+    delta       =as.matrix((z-sigma_s_hat)^2)
+     data2      =cbind(x,delta)
+     h_delta    =h_f(data=data2)
+     h_delta    =h_delta/h_delta_c
+sigma0_xgrid_hat=m_hat_f(data=data2,xgrid=xgrid,h=h_delta)
+  sigma0_xgrid_hat=sigma0_xgrid_hat[,2]
+###########################################################################   
+    temp5<-as.matrix(exp(x)-0.9)
+    temp6<-as.matrix(exp(x)+0.9)
+    #sig  <-temp5/temp6
+    sig  <-0.1*sin(2*pi*x)+0.2
+    sigma_true=as.matrix(sig^2)
+    sigma_true<-cbind(x,sigma_true)
+####################################################       
+    temp7=-0.5*log(1-alpha)
+   qalpha=-log(temp7)
+    temp8=(n*h_sig)^(-0.5)
+    temp9= sigma0_xgrid_hat^0.5
+    v1   = temp8*temp9*sqrt(5/7)#####ck
+   temp10=-2*log(h_sig)
+    ah   = temp10^0.5
+   temp11=0.5*log(0.75/(pi^2))
+   temp12= v1 *(ah+ah^(-1)*(qalpha+temp11))
+       lcl = sigma_sk_xgrid_hat-temp12
+       lcl = lcl*(lcl>0)*(lcl>0)
+       ucl = sigma_sk_xgrid_hat+temp12
+      lcl<-cbind(xgrid,lcl)
+       ucl<-cbind(xgrid,ucl)
+      #eq<-paste("sample size = ",n,",", 100*(1-alpha),"%SCB")
+      plot(data1,type="p",ylim=c(0,0.3),xlim=c(0,1),cex=0.6, col =8,main="sample size = 600, 99% SCB")
+      lines(sigma_true,lwd =3)
+      lines(sigma_sk_hat,col=2,lty=3,lwd =3)
+      lines(lcl,col=3,lwd =2,lty=2)
+      lines(ucl,col=3,lwd =2,lty=2)
+
+
+
+      
