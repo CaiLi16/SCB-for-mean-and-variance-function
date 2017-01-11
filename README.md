@@ -1,2 +1,2 @@
-# SCB-for-mean-and-variance-function
-the code to construct simulataneous confidence band for mean and variance function, see the paper "simultaneous confidence bands for mean and variance functions based on deterministic design" 
+# SCBs-for-mean-and-variance-functions
+the code to construct simulataneous confidence bands for mean and variance functions, see the paper "simultaneous confidence bands for mean and variance functions based on deterministic design" 
